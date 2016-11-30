@@ -40,6 +40,10 @@
 //character used to terminate cipher key string
 #define KEY_TERMINATING_CHAR '\n'
 
+#ifndef CHARACTER_TRANSFORMATION_FUNCTION_POINTER
+#define CHARACTER_TRANSFORMATION_FUNCTION_POINTER &encodeCharacter 
+#endif
+
 /*
  * Error functions
  */
@@ -178,6 +182,19 @@ char * createBuffer(int bufferSize){
   return buffer;
 }
 
+//removes trailing '\n' char from string
+void chompString(char* message){
+  int length = strlen(message);
+  //check to make sure buffer has length first
+  if(length == 0){
+    return;
+  }
+  //remove trailing '\n' by changing it to null char
+  if(message[length - 1] == '\n'){
+    message[length - 1] = '\0';
+  }
+}
+
 //receive message from sender and determine if it has the correct header
 //used so encode and decode clients do not connect to wrong servers
 //returns 1 if client is authorized, and 0 if not
@@ -201,7 +218,6 @@ int isClientAuthorized(int clientSocketFileDescriptor){
 //returns 1 if key has finished being sent, and 0 if not
 //uses presence of control character at the end of the string to know if
 //key is finished
-//also modifies key to remove that character, since we won't need it anymore
 int isKeyComplete(char *key){
   //sanity check first
   assert(key != NULL);
@@ -212,12 +228,7 @@ int isKeyComplete(char *key){
     return 0;
   }
   //check last char
-  if(key[length - 1] != KEY_TERMINATING_CHAR){
-    return 0;
-  }
-  //key must have terminating char, so remove it and return true
-  key[length - 1] = '\0';
-  return 1;
+  return key[length - 1] == KEY_TERMINATING_CHAR;
 
 }
 
@@ -273,6 +284,74 @@ void getMessageFromClient(int clientSocketFileDescriptor, char *message, int mes
 
 
 /*
+* Character encoding/decoding functions
+*/
+
+//normalizes ASCII A-Z and space to int from
+//0-26 (base 27), with 0 being A and 26 being space
+int charToBase27(char c){
+  //sanity check for character
+  assert(c == ' ' || isupper(c));
+  //check for space character
+  if(c == ' '){
+    return 26;
+  }
+  //A is ASCII character 65
+  int offset = 65;
+  return c - offset;
+}
+
+//reverse of charToBase27
+//converts base 27 number to ASCII char
+//A-Z or space (26 is space char, 0 is A)
+char base27ToChar(int d){
+  //sanity check for range
+  assert(d >= 0 && d <= 26);
+  if(d == 26){
+    return ' ';
+  }
+  int offset = 65;
+  return d + offset;
+}
+
+//encodes a character A-Z or space with key char
+//normalizes offset on ASCII character codes first
+//by adding them together and performing mod % 27 on result
+//returns encoded character
+char encodeCharacter(char messageChar, char keyChar){
+  //convert to base 27 versions
+  int base27MessageChar = charToBase27(messageChar);
+  int base27keyChar = charToBase27(keyChar);
+  //add together, perform modulo so still base 27, and convert to character
+  return base27ToChar((base27MessageChar + base27keyChar) % 27);
+}
+
+//decodes a character A-Z or space with key char
+//by subtracting key from encoded message and performing mod % 27 on result
+//returns encoded character
+//with normalized offset for ASCII character codes
+char decodeCharacter(char messageChar, char keyChar){
+  //convert to base 27 versions
+  int base27MessageChar = charToBase27(messageChar);
+  int base27keyChar = charToBase27(keyChar);
+  //subtract key from message, perform modulo so still base 27, and convert to character
+  return base27ToChar((base27MessageChar - base27keyChar) % 27);
+}
+
+
+//modify message in place, character by character using key
+//whether this encodes or decodes message depends on constant definition
+//at top of file, as both encoding and decoding files use the same code
+void modifyMessage(char *message, char *key, char (*characterTransformationFunction)(char, char)){
+  int messageLength = strlen(message);
+  int i;
+  //modify every character in message using key and transformation function
+  for(i = 0; i < messageLength; ++i){
+    message[i] = characterTransformationFunction(message[i], key[i]);
+  }
+}
+
+/*
 * Main server action
 * used by child process
 * either encodes plaintext using one time pad or decodes ciphertext into message
@@ -294,6 +373,8 @@ void mainServerAction(int clientSocketFileDescriptor){
 
   //client should now send key, so read that, and save in key variable
   getKeyFromClient(clientSocketFileDescriptor, key);
+  //remove trailing newline
+  chompString(key);
 
   //send ok message to let client know to send message
   sendToSocket(clientSocketFileDescriptor, OK_MESSAGE);
@@ -302,6 +383,11 @@ void mainServerAction(int clientSocketFileDescriptor){
   int messageLength = strlen(key);
   //get message from client
   getMessageFromClient(clientSocketFileDescriptor, message, messageLength);
+  //remove trailing newline
+  chompString(message);
+
+  //modify message to either be encoded or decoded as appropriate
+  modifyMessage(message, key, CHARACTER_TRANSFORMATION_FUNCTION_POINTER);
 
   sendToSocket(clientSocketFileDescriptor, message);
 
