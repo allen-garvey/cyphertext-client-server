@@ -25,6 +25,17 @@
 //maximum number of requests that allowed to queue up waiting for server to become available
 #define REQUEST_QUEUE_SIZE 5
 
+//string used as ok message to client
+//so client knows it is ok to send
+#define OK_MESSAGE "@OK\n"
+
+//character used to terminate cipher key and message strings
+#define DATA_TERMINATING_CHAR '\n'
+
+
+/*
+* Constants specific to encoding and decoding
+*/
 //string used to represent client is the correct one
 //should be sent as first message from client
 #ifndef ACCEPTED_MESSAGE_HEADER
@@ -32,13 +43,6 @@
 //number of chars including null char in header
 #define ACCEPTED_MESSAGE_HEADER_LENGTH 8
 #endif
-
-//string used as ok message to client
-//so client knows it is ok to send
-#define OK_MESSAGE "OK\n"
-
-//character used to terminate cipher key string
-#define KEY_TERMINATING_CHAR '\n'
 
 #ifndef CHARACTER_TRANSFORMATION_FUNCTION_POINTER
 #define CHARACTER_TRANSFORMATION_FUNCTION_POINTER &encodeCharacter 
@@ -167,9 +171,8 @@ void readFromSocketIntoBuffer(int clientSocketFileDescriptor, char *messageBuffe
 
 
 /*
-* Parse message command functions
+* Get data from client functions
 */
-
 
 //allocates memory for string buffer to store one time pad or message
 char * createBuffer(int bufferSize){
@@ -215,70 +218,52 @@ int isClientAuthorized(int clientSocketFileDescriptor){
   return 1;
 }
 
-//returns 1 if key has finished being sent, and 0 if not
+//returns 1 if data has finished being sent, and 0 if not
 //uses presence of control character at the end of the string to know if
-//key is finished
-int isKeyComplete(char *key){
+//data is finished
+int isDataComplete(char *data){
   //sanity check first
-  assert(key != NULL);
+  assert(data != NULL);
   //get length, since we need to check last character
-  int length = strlen(key);
-  //check to see if key is empty, since key must have length
+  int length = strlen(data);
+  //check to see if data is empty, since data must have length
   if(length <= 0){
     return 0;
   }
   //check last char
-  return key[length - 1] == KEY_TERMINATING_CHAR;
-
+  return data[length - 1] == DATA_TERMINATING_CHAR;
 }
 
-//gets key from client using socket, and saves in key argument
-//key should end in \n char, and since that should be the only
+//checks that key is the same length or longer than message
+//returns 1 if true, 0 if false
+int isValidKeyLength(char *key, char *message){
+  int keyLength = strlen(key);
+  int messageLength = strlen(message);
+
+  return keyLength >= messageLength;
+}
+
+//gets data from client using socket, and saves in data argument
+//data should end in \n char, and since that should be the only
 //newline char in the string, we will know that receiving from the client is 
 //done
-void getKeyFromClient(int clientSocketFileDescriptor, char *key){
+void getDataFromClient(int clientSocketFileDescriptor, char *data){
   //use while loop to receive data, since it might take multiple requests
   //specifically do-while, since we need it to run at least one time
   
   //create variables so new data gets added to end of buffer
   //subtract one from buffer size to allow for null char at end
   int bufferSize = MESSAGE_BUFFER_SIZE - 1;
-  char *keyCurrentPointer = key;
+  char *dataCurrentPointer = data;
   do{
-    int charCountTransferred = read(clientSocketFileDescriptor, keyCurrentPointer, bufferSize);
+    int charCountTransferred = read(clientSocketFileDescriptor, dataCurrentPointer, bufferSize);
     //check that read succeeded
     assert(charCountTransferred >= 0);
     //modify variables so new data gets added on to the end
     bufferSize -= charCountTransferred;
-    keyCurrentPointer += charCountTransferred;
+    dataCurrentPointer += charCountTransferred;
 
-  }while(!isKeyComplete(key) && bufferSize > 0);
-
-}
-
-//gets message from client using socket, and saves in message argument
-//messageLength should be calculated using the length of the key, since the two should be the same
-//length
-void getMessageFromClient(int clientSocketFileDescriptor, char *message, int messageLength){
-  //use while loop to receive data, since it might take multiple requests
-  //specifically do-while, since we need it to run at least one time
-  
-  //make sure messageLength won't overflow buffer
-  //needs to be less and not equal to buffer size to allow for null char at end
-  assert(messageLength < MESSAGE_BUFFER_SIZE);
-
-  //create variables so new data gets added to end of buffer
-  int bufferSize = messageLength;
-  char *messageCurrentPointer = message;
-  do{
-    int charCountTransferred = read(clientSocketFileDescriptor, messageCurrentPointer, bufferSize);
-    //check that read succeeded
-    assert(charCountTransferred >= 0);
-    //modify variables so new data gets added on to the end
-    bufferSize -= charCountTransferred;
-    messageCurrentPointer += charCountTransferred;
-
-  }while(bufferSize > 0);
+  }while(!isDataComplete(data) && bufferSize > 0);
 
 }
 
@@ -372,21 +357,29 @@ void mainServerAction(int clientSocketFileDescriptor){
   sendToSocket(clientSocketFileDescriptor, OK_MESSAGE);
 
   //client should now send key, so read that, and save in key variable
-  getKeyFromClient(clientSocketFileDescriptor, key);
+  getDataFromClient(clientSocketFileDescriptor, key);
   //remove trailing newline
   chompString(key);
 
   //send ok message to let client know to send message
   sendToSocket(clientSocketFileDescriptor, OK_MESSAGE);
 
-  //use length of key to determine message size, since they should be the same length
-  int messageLength = strlen(key);
   //get message from client
-  getMessageFromClient(clientSocketFileDescriptor, message, messageLength);
+  getDataFromClient(clientSocketFileDescriptor, message);
   //remove trailing newline
   chompString(message);
 
-  //modify message to either be encoded or decoded as appropriate
+  //check that key is the same length or longer than message
+  //send error message to client and exit if not
+  if(!isValidKeyLength(key, message)){
+    sendToSocket(clientSocketFileDescriptor, "@ERROR: Key is shorter than message\n");
+    //free memory from buffers
+    free(message);
+    free(key);
+    return;
+  } 
+
+  //modify message to either be encoded or decoded as appropriate, based on constant defined in header
   modifyMessage(message, key, CHARACTER_TRANSFORMATION_FUNCTION_POINTER);
 
   sendToSocket(clientSocketFileDescriptor, message);
@@ -436,6 +429,8 @@ int main(int argc, char **argv){
 
     //only the child process should be here now
     mainServerAction(clientSocketFileDescriptor);
+    //close client connection
+    close(clientSocketFileDescriptor);
     //child exits loop after performing action
     break;
     
