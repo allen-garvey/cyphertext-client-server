@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
 gcc -o ./keygen ./keygen.c -Wall;
-
+gcc -o ./opt_enc_d ./opt_enc_d.c -Wall;
