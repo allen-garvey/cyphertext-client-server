@@ -47,35 +47,46 @@ char randIntToChar(int num){
 }
 
 
+//initialize random number generator
+//based on: http://stackoverflow.com/questions/322938/recommended-way-to-initialize-srand
+//seed will only repeat once every 24 days
+void seedRandom(){
+	//get time of day to use as seed
+	struct timeval time; 
+    gettimeofday(&time, NULL);
+    //seed random number generator
+    srand((time.tv_sec * 1000) + (time.tv_usec / 1000));
+}
+
+//output sequence random characters (A-Z and spaces) for the length of keyLength
+//followed by newline at the end
+void printRandomKey(int keyLength){
+	int i;
+	for(i = 0; i < keyLength; ++i){
+		printf("%c", randIntToChar(getRandInt()));
+	}
+
+	//last char output must be newline
+	printf("\n");
+}
+
+
 int main(int argc, char const *argv[]){
 	//check for required number of arguments
 	if(argc != 2){
 		return printUsage(argv[0]);
 	}
-	//atoi will return 0, if keylength is non-numeric, which is fine because 0
+	//atoi will return 0, if keyLength is non-numeric, which is fine because 0
 	//is invalid anyway
 	int keyLength = atoi(argv[1]);
 	//check that keyLength is in the valid range
 	if(!isValidKeyLength(keyLength)){
 		return printUsage(argv[0]);
 	}
-
-	//initialize random number generator
-	//based on: http://stackoverflow.com/questions/322938/recommended-way-to-initialize-srand
-	struct timeval time; 
-    gettimeofday(&time, NULL);
-    //seed will only repeat once every 24 days
-    srand((time.tv_sec * 1000) + (time.tv_usec / 1000));
-
-	//output random characters (A-Z and spaces) for the length of keyLength
-	int i;
-	for(i = 0; i < keyLength; ++i){
-		printf("%c", randIntToChar(getRandInt()));
-	}
-
-	//last char in file must be newline
-	printf("\n");
-
+	//seed random number generator
+	seedRandom();
+	//print out random key
+	printRandomKey(keyLength);
 
 	return 0;
 }
