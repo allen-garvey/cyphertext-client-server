@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+gcc -o ./keygen ./keygen.c -Wall;
+
