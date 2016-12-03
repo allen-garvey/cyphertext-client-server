@@ -388,6 +388,7 @@ void mainServerAction(int clientSocketFileDescriptor){
   //modify message to either be encoded or decoded as appropriate, based on constant defined in header
   modifyMessage(message, key, CHARACTER_TRANSFORMATION_FUNCTION_POINTER);
 
+  //send modified message to client
   sendToSocket(clientSocketFileDescriptor, message);
 
   //free memory from buffers

@@ -14,6 +14,8 @@
 //number of chars including null char in header
 #define ACCEPTED_MESSAGE_HEADER_LENGTH 8
 
+//function used to combine plaintext character and key character to get
+//resulting character that server sends to the client
 #define CHARACTER_TRANSFORMATION_FUNCTION_POINTER &decodeCharacter 
 
 //with the exception of the above constants, encoding and decoding server should work the same
