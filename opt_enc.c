@@ -404,6 +404,10 @@ int main(int argc, char *argv[]){
 	printf("%s", messageBuffer);
 
 	//free message buffer
+	//program might exit due to error before we reach this, which isn't ideal
+	//but since the program isn't doing anything after that, the operating system
+	//will just reclaim the memory
+	//http://stackoverflow.com/questions/654754/what-really-happens-when-you-dont-free-after-malloc
 	free(messageBuffer);
 
 	return 0;
