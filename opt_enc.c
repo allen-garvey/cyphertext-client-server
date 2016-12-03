@@ -42,8 +42,6 @@
 //should be sent as first message to server
 #ifndef CLIENT_IDENTIFICATION_HEADER
 #define CLIENT_IDENTIFICATION_HEADER "ENCODE\n"
-//number of chars including null char in header
-#define CLIENT_IDENTIFICATION_HEADER_LENGTH 8
 #endif
 
 /*
@@ -54,12 +52,6 @@ void printUsage(char *programName){
 	fprintf(stderr, "usage: %s <plaintext_file> <key_file> <port>\n", programName);
 }
 
-//prints error message and exits program with error code
-//based on: http://www.cs.cmu.edu/afs/cs/academic/class/15213-f99/www/class26/tcpserver.c
-void error(char *msg){
-	perror(msg);
-	exit(1);
-}
 
 /*
  * Validate command-line arguments
@@ -93,6 +85,36 @@ int getPortNum(int argc, char **argv){
   	}
   	return portNum;
 }
+
+/*
+* Get data from server functions
+*/
+
+//allocates memory for string buffer to store one time pad or message
+char * createBuffer(int bufferSize){
+  //allocate memory
+  char *buffer = malloc(sizeof(char) * bufferSize);
+  //check that memory allocation succeeded
+  assert(buffer != NULL);
+  //initialize memory with null chars
+  bzero(buffer, bufferSize);
+  return buffer;
+}
+
+//removes trailing '\n' char from string
+void chompString(char* message){
+  int length = strlen(message);
+  //check to make sure buffer has length first
+  if(length == 0){
+    return;
+  }
+  //remove trailing '\n' by changing it to null char
+  if(message[length - 1] == '\n'){
+    message[length - 1] = '\0';
+  }
+}
+
+
 
 
 /*
@@ -200,6 +222,132 @@ int checkFileContents(char *fileName){
 }
 
 
+/*
+ * Socket/Network functions
+ */
+//builds server address we will use to connect
+//based on: http://www.cs.cmu.edu/afs/cs/academic/class/15213-f99/www/class26/tcpserver.c
+void buildServerAddress(struct sockaddr_in *serverAddress, int portNum){
+  //initialize memory by setting it to all 0s
+  bzero((char *) serverAddress, sizeof(*serverAddress));
+  //set internet address
+  serverAddress->sin_family = AF_INET;
+  //use system's ip address
+  serverAddress->sin_addr.s_addr = htonl(INADDR_ANY);
+  //set listen port
+  serverAddress->sin_port = htons((unsigned short)portNum);
+}
+
+//connects to server using tcp socket and returns file descriptor
+//for socket connection
+//exits and prints error message if there is an error
+//based on: http://www.cs.cmu.edu/afs/cs/academic/class/15213-f99/www/class26/tcpserver.c
+int connectToServer(int portNum){
+	//create the tcp socket 
+	int serverSocketFileDescriptor = socket(AF_INET, SOCK_STREAM, 0);
+	if (serverSocketFileDescriptor < 0){
+		fprintf(stderr, "Could not open TCP socket\n");
+		exit(2);
+	}
+	
+	//build server's internet address using port number
+	struct sockaddr_in serverAddress;
+  	buildServerAddress(&serverAddress, portNum);
+  	
+  	//create a connection with the server
+    if(connect(serverSocketFileDescriptor, (struct sockaddr*) &serverAddress, sizeof(serverAddress)) < 0){
+        fprintf(stderr, "Could not connect to server on port %d\n", portNum);
+        exit(2);
+    }
+    return serverSocketFileDescriptor;
+}
+
+/*
+* Helper functions for reading/writing to sockets
+*/
+//sends message to server identified by file descriptor
+void sendToSocket(int serverSocketFileDescriptor, char *message){
+  //send message to server
+  int charCountTransferred = write(serverSocketFileDescriptor, message, strlen(message));
+  //check for errors writing
+  if(charCountTransferred < 0){
+    fprintf(stderr, "Could not send message to server\n");
+    	exit(1);
+  }
+}
+
+//returns 1 if data has finished being sent, and 0 if not
+//uses presence of control character at the end of the string to know if
+//data is finished
+int isDataComplete(char *data){
+  //sanity check first
+  assert(data != NULL);
+  //get length, since we need to check last character
+  int length = strlen(data);
+  //check to see if data is empty, since data must have length
+  if(length <= 0){
+    return 0;
+  }
+  //check last char
+  return data[length - 1] == DATA_TERMINATING_CHAR;
+}
+
+
+//gets data from client using socket, and saves in data argument
+//data should end in \n char, and since that should be the only
+//newline char in the string, we will know that receiving from the client is 
+//done
+void getDataFromServer(int serverSocketFileDescriptor, char *data){
+  //use while loop to receive data, since it might take multiple requests
+  //specifically do-while, since we need it to run at least one time
+  
+  //create variables so new data gets added to end of buffer
+  //subtract one from buffer size to allow for null char at end
+  int bufferSize = MESSAGE_BUFFER_SIZE - 1;
+  char *dataCurrentPointer = data;
+  do{
+    int charCountTransferred = read(serverSocketFileDescriptor, dataCurrentPointer, bufferSize);
+    //check that read succeeded
+    if(charCountTransferred < 0){
+    	fprintf(stderr, "There was a problem receiving data from server\n");
+    	exit(1);
+    }
+    //modify variables so new data gets added on to the end
+    bufferSize -= charCountTransferred;
+    dataCurrentPointer += charCountTransferred;
+
+  }while(!isDataComplete(data) && bufferSize > 0);
+
+}
+
+
+//sends first line of file to server (file should only have one line in it)
+void sendFileToServer(int serverSocketFileDescriptor, char *fileName){
+	FILE *filePointer = openFileByName(fileName);
+	//read file line by line and check that it contains valid characters
+	//based on: http://stackoverflow.com/questions/3501338/c-read-file-line-by-line
+	//initialize line reading variables
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t read;
+	int linesRead = 0;
+	//read first line and send to server
+	while((read = getline(&line, &len, filePointer)) != -1){
+		//only one line allowed, see if this is the first line
+		if(linesRead > 0){
+			break;
+		}
+		sendToSocket(serverSocketFileDescriptor, line);
+
+		linesRead++;
+	}
+	//free space allocated for line
+	free(line);
+	//close file
+	fclose(filePointer);
+}
+
+
 
 
 /*
@@ -221,6 +369,42 @@ int main(int argc, char *argv[]){
 		exit(1);
 	}
 
+	//initialize buffer for messages to server
+	char *messageBuffer = createBuffer(MESSAGE_BUFFER_SIZE);
+
+	//connect to server
+	int serverSocketFileDescriptor = connectToServer(portNum);
+
+	//send identification message
+	sendToSocket(serverSocketFileDescriptor, CLIENT_IDENTIFICATION_HEADER);
+
+	//check for server confirmation
+	getDataFromServer(serverSocketFileDescriptor, messageBuffer);
+	if(strcmp(messageBuffer, OK_MESSAGE) != 0){
+		fprintf(stderr, "This program is not authorized to access that server\n");
+		exit(1);
+	}
+
+	//send key file
+	sendFileToServer(serverSocketFileDescriptor, keyFileName);
+
+	//check for server confirmation
+	getDataFromServer(serverSocketFileDescriptor, messageBuffer);
+	if(strcmp(messageBuffer, OK_MESSAGE) != 0){
+		fprintf(stderr, "The server had problems receiving the key file\n");
+		exit(1);
+	}
+
+	//send message file
+	sendFileToServer(serverSocketFileDescriptor, messageFileName);
+
+
+	//get results of combining key and message file from server and print result
+	getDataFromServer(serverSocketFileDescriptor, messageBuffer);
+	printf("%s", messageBuffer);
+
+	//free message buffer
+	free(messageBuffer);
 
 	return 0;
 }
