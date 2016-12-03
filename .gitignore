@@ -25,3 +25,4 @@ opt_enc
 opt_dec
 test/*
 testing/*
+compileall2

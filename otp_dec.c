@@ -11,4 +11,4 @@
 
 //used in initial message to server to identify client
 #define CLIENT_IDENTIFICATION_HEADER "DECODE\n"
-#include "opt_enc.c"
+#include "otp_enc.c"

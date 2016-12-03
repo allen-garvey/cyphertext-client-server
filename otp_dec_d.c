@@ -18,4 +18,4 @@
 
 //with the exception of the above constants, encoding and decoding server should work the same
 //so just include the code for the encoding server
-#include "opt_enc_d.c"
+#include "otp_enc_d.c"
