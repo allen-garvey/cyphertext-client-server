@@ -153,8 +153,9 @@ int isValidLine(char *line){
 }
 
 //reads file line by line
-//returns 1 if file contains only valid characters
+//returns number of characters in first line if file contains only valid characters
 //or 0 otherwise
+//note that file should only contain exactly one line (text file automatically contain extra newline at end of file)
 int isFileContentsValid(char *fileName){
 	FILE *filePointer = openFileByName(fileName);
 	//read file line by line and check that it contains valid characters
@@ -163,14 +164,22 @@ int isFileContentsValid(char *fileName){
 	char *line = NULL;
 	size_t len = 0;
 	ssize_t read;
-	int returnValue = 1;
-
+	int returnValue = 0;
+	int linesRead = 0;
 	while((read = getline(&line, &len, filePointer)) != -1){
+		//only one line allowed, so check for last line
+		if(linesRead == 1 && strlen(line) == 1 && line[0] == '\n'){
+			break;
+		}
 		//check to see if line contains invalid characters
-		if(!isValidLine(line)){
+		else if(linesRead > 0 || !isValidLine(line)){
 			returnValue = 0;
 			break;
 		}
+		else{
+			returnValue = strlen(line);
+		}
+		linesRead++;
 	}
 	//free space allocated for line
 	free(line);
@@ -181,11 +190,13 @@ int isFileContentsValid(char *fileName){
 
 //checks that file contains valid characters and prints
 //message and exits if it doesn't
-void checkFileContents(char *fileName){
+int checkFileContents(char *fileName){
+	int length = isFileContentsValid(fileName);
 	if(!isFileContentsValid(fileName)){
-		fprintf(stderr, "%s contains characters other than uppercase letters and spaces\n", fileName);
+		fprintf(stderr, "%s contains characters other than uppercase letters and spaces or is empty\n", fileName);
 		exit(1);
 	}
+	return length;
 }
 
 
@@ -202,9 +213,13 @@ int main(int argc, char *argv[]){
 	char *keyFileName = argv[2];
 
 	//check message and key to make sure they contain valid characters
-	checkFileContents(messageFileName);
-	checkFileContents(keyFileName);
-
+	int messageLength = checkFileContents(messageFileName);
+	int keyLength = checkFileContents(keyFileName);
+	//check that key is at least as long as message
+	if(keyLength < messageLength){
+		fprintf(stderr, "Number of characters in key file must be greater than or equal number of characters in message file\n");
+		exit(1);
+	}
 
 
 	return 0;
