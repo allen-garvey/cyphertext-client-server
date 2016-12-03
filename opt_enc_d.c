@@ -321,8 +321,8 @@ char decodeCharacter(char messageChar, char keyChar){
   int base27keyChar = charToBase27(keyChar);
   //subtract key from message, perform modulo so still base 27, and convert to character
   int difference = (base27MessageChar - base27keyChar) % 27;
-  //need absolute value of difference
-  difference = difference >= 0 ? difference : -1 * difference;
+  //need add encoding base if difference is less than 0
+  difference = difference >= 0 ? difference : difference + 27;
   return base27ToChar(difference);
 }
 
