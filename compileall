@@ -3,3 +3,4 @@
 gcc -o ./keygen ./keygen.c -Wall;
 gcc -o ./opt_enc_d ./opt_enc_d.c -Wall;
 gcc -o ./opt_dec_d ./opt_dec_d.c -Wall;
+gcc -o ./opt_enc ./opt_enc.c -Wall;
