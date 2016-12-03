@@ -320,7 +320,10 @@ char decodeCharacter(char messageChar, char keyChar){
   int base27MessageChar = charToBase27(messageChar);
   int base27keyChar = charToBase27(keyChar);
   //subtract key from message, perform modulo so still base 27, and convert to character
-  return base27ToChar((base27MessageChar - base27keyChar) % 27);
+  int difference = (base27MessageChar - base27keyChar) % 27;
+  //need absolute value of difference
+  difference = difference >= 0 ? difference : -1 * difference;
+  return base27ToChar(difference);
 }
 
 
@@ -334,6 +337,9 @@ void modifyMessage(char *message, char *key, char (*characterTransformationFunct
   for(i = 0; i < messageLength; ++i){
     message[i] = characterTransformationFunction(message[i], key[i]);
   }
+  //add terminating character to end of message
+  message[messageLength] = DATA_TERMINATING_CHAR;
+
 }
 
 /*
