@@ -18,6 +18,8 @@
 #include <ctype.h>
 //for error checking
 #include <assert.h>
+//for file opening errors
+#include <errno.h>
 
 //maximum number of characters used for the buffer for messages sent to/from the client
 #define MESSAGE_BUFFER_SIZE 131071
@@ -86,19 +88,122 @@ int getPortNum(int argc, char **argv){
 	int portNum = atoi(argv[3]);
   	//check that portNum is valid - if atoi fails, 0 is returned
   	if(!isPortNumValid(portNum)){
-    	fprintf(stderr, "Port given is out of valid range");
+    	fprintf(stderr, "Port given is out of valid range\n");
     	exit(2);
   	}
   	return portNum;
 }
 
 
-int main(int argc, char const *argv[]){
+/*
+ * File opening and validation functions
+ */
+
+//print relevant error message when file
+//can't be opened
+void printFileOpenError(int errorNum, char *fileName){
+	switch(errorNum){
+		//permissions error
+		case EACCES:
+			fprintf(stderr, "Permission denied to open %s\n", fileName);
+			break;
+		//file doesn't exist
+		case ENOENT:
+			fprintf(stderr, "%s doesn't exist\n", fileName);
+			break;
+		//unspecified error
+		default:
+			fprintf(stderr, "Could not open %s\n", fileName);
+		break;
+		}
+}
+
+//opens a file and returns file pointer
+//exits with error if file can't be opened
+FILE * openFileByName(char *fileName){
+	//attempt to open to specified file for reading
+	FILE *filePointer = fopen(fileName, "r");
+	//check if it succeed
+	if(filePointer == NULL){
+		//print error, since we couldn't open file
+		printFileOpenError(errno, fileName);
+		exit(1);
+	}
+
+
+	return filePointer;
+}
+
+//check line to see if it contains invalid characters 
+//(anything except uppercase characters or spaces)
+//returns 1 if it doesn't, 0 if it does
+int isValidLine(char *line){
+	//subtract 1 from length, since last character will be newline
+	int length = strlen(line) - 1;
+	int i;
+	for(i=0;i<length;i++){
+		char currentChar = line[i];
+		//make sure character is either uppercase letter or space
+		if(!isupper(currentChar) && currentChar != ' '){
+			return 0;
+		}
+	}
+	return 1;
+
+}
+
+//reads file line by line
+//returns 1 if file contains only valid characters
+//or 0 otherwise
+int isFileContentsValid(char *fileName){
+	FILE *filePointer = openFileByName(fileName);
+	//read file line by line and check that it contains valid characters
+	//based on: http://stackoverflow.com/questions/3501338/c-read-file-line-by-line
+	//initialize line reading variables
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t read;
+	int returnValue = 1;
+
+	while((read = getline(&line, &len, filePointer)) != -1){
+		//check to see if line contains invalid characters
+		if(!isValidLine(line)){
+			returnValue = 0;
+			break;
+		}
+	}
+	//free space allocated for line
+	free(line);
+	//close file
+	fclose(filePointer);
+	return returnValue;
+}
+
+//checks that file contains valid characters and prints
+//message and exits if it doesn't
+void checkFileContents(char *fileName){
+	if(!isFileContentsValid(fileName)){
+		fprintf(stderr, "%s contains characters other than uppercase letters and spaces\n", fileName);
+		exit(1);
+	}
+}
+
+
+
+
+/*
+ * Main program
+ */
+int main(int argc, char *argv[]){
 	//validate command line arguments, and get values from arguments
 	validateCommandLineArgumentsLength(argc, argv);
 	int portNum = getPortNum(argc, argv);
 	char *messageFileName = argv[1];
 	char *keyFileName = argv[2];
+
+	//check message and key to make sure they contain valid characters
+	checkFileContents(messageFileName);
+	checkFileContents(keyFileName);
 
 
 
